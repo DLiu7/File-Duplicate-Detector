@@ -1,16 +1,16 @@
 #include "detect_dups.h"
 
-#include <ftw.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#include <limits.h>
-#include <errno.h>
-#include <dirent.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <fcntl.h>
-#include <libgen.h>
+#include <ftw.h>        // File tree walking
+#include <sys/stat.h>   // File status
+#include <unistd.h>     // POSIX API (readlink)
+#include <limits.h>     // PATH_MAX constant
+#include <errno.h>      // Error numbers
+#include <dirent.h>     // Directory operations
+#include <stdio.h>      // Standard I/O
+#include <stdlib.h>     // Standard library
+#include <string.h>     // String operations
+#include <fcntl.h>      // File control
+#include <libgen.h>     // For dirname
 #include <openssl/evp.h>
 #include <openssl/md5.h>
 #include "uthash.h"
@@ -22,8 +22,8 @@ EVP_MD_CTX *mdctx;
 const EVP_MD *EVP_md5();
 char base_path[PATH_MAX];
 
+// Function to identify the type of file and process it accordingly
 static int render_file_info(const char *fpath, const struct stat *sb, int tflag, struct FTW *ftwbuf) {
-    (void)ftwbuf;
 
     switch (tflag) {
         case FTW_F: {
@@ -42,6 +42,8 @@ static int render_file_info(const char *fpath, const struct stat *sb, int tflag,
         }
 
         case FTW_SL: {
+            // Handle symbolic links through absolute paths
+            
             char link_target[PATH_MAX];
             ssize_t len = readlink(fpath, link_target, sizeof(link_target) - 1);
             if (len == -1) {
@@ -81,6 +83,7 @@ static int render_file_info(const char *fpath, const struct stat *sb, int tflag,
     return 0;
 }
 
+// Function to compute the MD5 hash of a file
 int compute_md5(const char *path, char *output) {
     EVP_MD_CTX *mdctx = EVP_MD_CTX_new();
     const EVP_MD *md = EVP_md5();
@@ -113,6 +116,7 @@ int compute_md5(const char *path, char *output) {
     return 0;
 }
 
+// Function to create a new PathNode
 PathNode* createPN(const char *path) {
     PathNode *newNode = malloc(sizeof(PathNode));
     if (newNode) {
@@ -123,6 +127,7 @@ PathNode* createPN(const char *path) {
     return newNode;
 }
 
+// Function to add a new path node to the linked list
 void addPath(PathNode **head, const char *path) {
     PathNode *newNode = createPN(path);
     if (!newNode) return;
@@ -130,6 +135,7 @@ void addPath(PathNode **head, const char *path) {
     *head = newNode;
 }
 
+// Function to insert a regular file into the file group
 void insertRegFile(const char *md5, ino_t inode, nlink_t ref_count, const char *path) {
     FileGroup *fg = NULL;
     HASH_FIND_STR(file_groups, md5, fg);
@@ -157,6 +163,7 @@ void insertRegFile(const char *md5, ino_t inode, nlink_t ref_count, const char *
     hl->path_count++;
 }
 
+// Function to insert a symbolic link into the file group
 void insertSym(const char *symlink_path, ino_t target_ino) {
     FileGroup *fg, *tmp_fg;
     struct stat link_stat;
@@ -199,9 +206,12 @@ void insertSym(const char *symlink_path, ino_t target_ino) {
     }
 }
 
+// Function to print the output
 void print_output() {
     int file_number = 1;
     FileGroup *fg, *tmp_fg;
+
+    // iterate through the file groups
     for (fg = file_groups; fg != NULL; fg = tmp_fg) {
         tmp_fg = fg->hh.next;
 
@@ -209,6 +219,8 @@ void print_output() {
         printf("\tMD5 Hash: %s\n", fg->md5);
 
         HardLink *hl, *tmp_hl;
+
+        // iterate through the hard links
         for (hl = fg->hard_links; hl != NULL; hl = tmp_hl) {
             tmp_hl = hl->hh.next;
 
@@ -219,6 +231,8 @@ void print_output() {
 
             int softlink_number = 1;
             SoftLink *sl, *tmp_sl;
+            
+            // iterate through the soft links
             for (sl = hl->soft_links; sl != NULL; sl = tmp_sl) {
                 tmp_sl = sl->hh.next;
 
@@ -231,6 +245,7 @@ void print_output() {
     }
 }
 
+// Function to free the linked list of paths
 void freePath(PathNode *head) {
     while (head) {
         PathNode *temp = head;
@@ -239,6 +254,7 @@ void freePath(PathNode *head) {
     }
 }
 
+// Function to clean up the file groups and free memory
 void cleanup() {
     FileGroup *fg, *tmp_fg;
     HASH_ITER(hh, file_groups, fg, tmp_fg) {
@@ -259,7 +275,10 @@ void cleanup() {
     }
 }
 
+// Main function to process the command line arguments and start the file processing
 int main(int argc, char *argv[]) {
+
+    // Error handling for command line arguments
     if (argc != 2) {
         printf("Usage: ./detect_dups <directory>\n");
         exit(EXIT_FAILURE);
@@ -285,6 +304,7 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    // Initialize the file groups and start processing the directory
     if (nftw(dir_path, render_file_info, 20, FTW_PHYS) == -1) {
         perror("nftw");
         EVP_MD_CTX_free(mdctx);
